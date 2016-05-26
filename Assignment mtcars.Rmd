@@ -1,0 +1,176 @@
+---
+title: "Automatic or Manual transmission?"
+author: "Marcelo Szilagyi"
+date: "May 20, 2016"
+output: 
+  word_document: 
+    reference_docx: template_regression.docx
+fig_height: 6
+fig_width: 6
+---
+# Executive Summary  
+This report, using the mtcars database, addresses the question if the automatic transmission is better than the manual in terms of miles per gallon. An initial Student t-test shows a difference in favor of automated transmission between 3.6 and 10.8 mpg. As transmission can be influenced by other variables, linear regression was used to include relevant variables (e.g.: weight of the car). The final acceptable regression model includes the transmission as a predictor variable, but with p value of 0.2, indicating the transmission is not a predictor of mpg by itself, but only an acceptable predictor when jointly considered with the other variables (weight, number of cylinders and horse power).
+
+(note: document created in Markdown/Knit; most of calculations used "echo=FALSE" to meet 2 page requirement.)
+
+#Exploratory data analysis  
+
+```{r, cache=FALSE,echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+#load silently the required packages
+options(warn = -1); packages <- c("ggplot2", "data.table", "GGally", "car","corrplot", "RColorBrewer", "MASS", "relaimpo"); 
+#lapply(packages, install.packages, character.only = TRUE)
+lapply(packages, require, character.only = TRUE)
+lapply(packages, library, character.only = TRUE)
+options(warn = 0)
+```
+
+```{r, cache=TRUE, echo=FALSE}
+# load the data
+data(mtcars)
+dt = as.data.table(mtcars)
+# if the number of unique values of a variable is below 10, convert the data type to factor
+UniqueValues = sapply(apply(dt,2,(unique)),length); factorize = names(which((UniqueValues<10)))
+# apply the factorization to all relevant variables.
+dt$cyl = as.factor(dt$cyl); dt$vs = as.factor(dt$vs); dt$am = as.factor(dt$am); dt$gear = as.factor(dt$gear); dt$carb = as.factor(dt$carb)
+a=round(shapiro.test(dt[am=="1",mpg])$p.value,2)
+b= length(dt[am=="1",mpg])
+c= round(shapiro.test(dt[am=="0",mpg])$p.value,2)
+d= length(dt[am=="0",mpg])
+```
+
+## Test for transmission impact (t-test)
+
+As the question is for a 1 dependent variable and 1 independent variable with 2 levels, the appropriate test is a t test - assuming normality of the population and homoskedasticity (homogeneity of variances). The samples are normal: p values of `r a` for the automatic transmission group (n= `r b`) and `r c` for the manual transmission (n= `r d`).  
+
+```{r, cache=TRUE, echo=FALSE}
+HomTest = var.test(dt[am=="1",mpg], dt[am=="0",mpg])
+# if variance p value above threshold, perform t test with unequal variances; otherwise perform considering equal variances
+TestStu = t.test(dt[am=="1",mpg],dt[am=="0",mpg], var.equal=ifelse(HomTest$p.value>0.05,TRUE,FALSE), paired=FALSE)
+```
+The results show that a p value of `r TestStu$p.value`, and the gain in mpgs for automatic cars is in a 95% confidence interval between  `r round(TestStu$conf.int[1],1)` and `r round(TestStu$conf.int[2],1)` mpgs. 
+
+But this is likely irrelevant, as there is other variables that are likely more important to mpg than transmission. The regression approach below will address that.  
+
+## Correlation between variables 
+Before moving into the regression, it is critical to check the correlation between variables to avoid multicollinearity.
+As the graph below shows, there is strong correlation between most of the continuous variables. Additional analysis (not displayed) shows that categorical variables also are highly related to continuous variables - for example, hp (horse power) is smaller in automatic cars. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, echo=FALSE}
+
+M<-cor(dt[,c(3:7), with = FALSE])
+# corrplot(M, method= "number", type="upper", order="hclust",
+#         col=brewer.pal(n=8, name="PuOr"),title = "Correlation between numeric variables")
+
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+ }
+
+ p.mat <- cor.mtest(M)
+
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(M, method="color",col=col(200),  
+         type="upper", order="hclust", 
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col="black", tl.srt=0, #Text label color and rotation
+         # Combine with significance
+         p.mat = p.mat, sig.level = 0.05, insig = "blank", 
+         # hide correlation coefficient on the principal diagonal
+         diag=FALSE, title = "Correlation and significance", mar=c(4,4,4,4), oma=c(0,0,0,0))
+
+# ggpairs(dt,title = "Correlation between variables")
+
+ComPairs = combn(names(dt[,sapply(dt, is.factor), with = FALSE]),2)
+mychi = data.frame(matrix(NA, nrow=dim(ComPairs)[2], ncol=2))
+for (i in 1: dim(ComPairs)[2]) {
+  mychi[i,1] = paste (ComPairs[,i], collapse =" ")
+  #mychi[i,2] = chisq.test(table(dt[,eval(ComPairs[,1]), with = FALSE]))$p.value } 
+  mychi[i,2] = round(fisher.test(table(dt[,eval(ComPairs[,i]), with = FALSE]))$p.value,3) }
+
+NotRelevant = as.data.frame(mychi[mychi$X2>0.05,1])
+
+
+```
+
+Finally, using a fisher test (a more precise test for small values than the Chi-Square), only 3 combinations of categorical variables of 10 were not statistically significant: vs and am; am and carb and gear and carb - so in a sense, all variables are entangled with each other.
+
+# Regressions
+
+## Simplistic Approach
+Run a regression purely on the transmission (automatic or manual) seems is a result of the following code:
+```{r}
+WrongFit = lm(mpg ~ am, data=dt)
+``` 
+The intercept is `r round(WrongFit$coefficients[1],2)` and the slope is `r round(WrongFit$coefficients[2],2)`. This means a car wit manual transmission has an expected mpg of 17.1 mpg while a car with automatic transmission has an expected 24.3 mpg performance. Note the increase in performance matches the Student t test value mentioned above. The appendix shows the residual plots of this regression and the residuals not fitted - and that's the reason why the R-squared is only 0.35 (ie, only 35% of the variation can be explained by the variable). 
+
+## Stepwise Approach
+
+As the figure above shows, there is a significant correlation between the variables. So, there is a need to apply a regression method that includes or excludes variables considering the benefit to the regression. A stepwise approach was adopted in both directions, based on F statistic: 
+```{r, echo=FALSE}
+FirstFit <-lm(mpg ~ ., data=dt) 
+StepWise = step(FirstFit,direction="both",test="F", trace = 0)
+OptimizedFit = eval(StepWise$call)
+summary(OptimizedFit)
+```
+
+Therefore, as the result above shows, the impact of automatic transmission is to increase between `r round(confint(OptimizedFit)[6,1],2)` and `r round(confint(OptimizedFit)[6,1],2)`, all other variables held constant. Therefore, the transmission presents an impact that contributes to a better prediction (jointly  with other predictors), but is not a significant by itself impact on the car efficiency. The residuals analsysis (see appendix) did not indicate issues with the residuals. Finally, the VIFs are borderline, but still within the acceptable limits. 
+
+## Nested likehood approach
+It is possible to select the variables using the nested likehood ratio tests. Numerous interactions (based on the correlation ratios above) were tested. A solution with 2 variables only  - weight and horse power (2nd line on the table below) seems to be the best solution with this approach.
+Note the 3rd line result is for the model determined in the stepwise solution - note that this model would not be selected using the nested approach, as the p value is 0.08. As a final comment, the adjusted R square of the below model is 0.81, while the more complex model above is 0.84 - a very small difference that might justify the use of the model below - composed by weight and horse power only.
+
+```{r, echo=FALSE}
+fit1 <- lm(mpg~wt, data=dt)
+fit2 <- update (fit1, mpg~wt+hp) #  cont. variables did show improv.
+fit3 <- update (fit1,mpg~wt+hp+cyl+am)
+knitr::kable(anova(fit1,fit2,fit3))
+```
+
+
+# Appendix
+
+# Residual plot for the simplistic/wrong regression
+```{r, echo=FALSE, fig.height=4, fig.width=4}
+layout(matrix(c(1,2,3,4),2,2))
+plot(WrongFit)
+layout(matrix(c(1,1,1,1),1,1))
+```
+
+# Residual Diagnostics for the final regression
+```{r, cache=TRUE,fig.height=8, fig.width=8}
+fit = OptimizedFit
+outlierTest(fit)
+#qqPlot(fit, main="QQ Plot") #qq plot for studentized resid 
+#leveragePlots(fit) # leverage plots
+layout(matrix(c(1,2,3,4),2,2)) # optional 4 graphs/page 
+plot(fit)
+layout(matrix(c(1,1,1,1),1,1))
+```
+
+VIF
+```{r, cache=TRUE}
+knitr::kable(vif(fit))
+```
+
+Criteria
+
+
+References
+<http://rmarkdown.rstudio.com>  
+
+<http://www.statmethods.net/stats/regression.html>  
+
+<http://www.ats.ucla.edu/stat/stata/whatstat/>  
+
+<http://stats.stackexchange.com/questions/66448/should-covariates-that-are-not-statistically-significant-be-kept-in-when-creat>  
+
