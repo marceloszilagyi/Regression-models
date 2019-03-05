@@ -8,7 +8,6 @@ Executive Summary
 
 This report, using the mtcars database, addresses the question if the automatic transmission is better than the manual in terms of miles per gallon. An initial Student t-test shows a difference in favor of automated transmission between 3.6 and 10.8 mpg. As transmission can be influenced by other variables, linear regression was used to include relevant variables (e.g.: weight of the car). The final acceptable regression model includes the transmission as a predictor variable, but with p value of 0.2, indicating the transmission is not a predictor of mpg by itself, but only an acceptable predictor when jointly considered with the other variables (weight, number of cylinders and horse power).
 
-(note: document created in Markdown/Knit; most of calculations used "echo=FALSE" to meet 2 page requirement.)
 
 Exploratory data analysis
 =========================
@@ -37,7 +36,7 @@ Regressions
 Simplistic Approach
 -------------------
 
-Run a regression purely on the transmission (automatic or manual) seems is a result of the following code:
+Running a regression purely on the transmission (automatic or manual) is a result of the following code:
 
 ``` r
 WrongFit = lm(mpg ~ am, data=dt)
