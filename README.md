@@ -134,7 +134,7 @@ knitr::kable(vif(fit))
 
 Criteria
 
-References <http://rmarkdown.rstudio.com>
+References:
 
 <http://www.statmethods.net/stats/regression.html>
 
