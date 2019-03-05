@@ -1,0 +1,15 @@
+base
+ggplot2
+data.table
+GGally
+carData
+car
+corrplot
+RColorBrewer
+MASS
+boot
+Matrix
+survival
+survey
+mitools
+relaimpo
